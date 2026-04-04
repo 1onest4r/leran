@@ -1,16 +1,20 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../data/database/isar_service.dart';
 
-class HomePageLogic extends ChangeNotifier {
+import '../data/database/isar_service.dart';
+import '../data/models/note.dart';
+
+class FolderLogic extends ChangeNotifier {
   String? folderPath;
   bool isLoading = true;
 
   final IsarService dbService = IsarService();
+  List<Note> allNotes = [];
 
   //when class is created automatically check for saved folder
-  HomePageLogic() {
+  FolderLogic() {
     loadSavedFolder();
   }
 
@@ -22,9 +26,18 @@ class HomePageLogic extends ChangeNotifier {
     //ensure the db is fully open before we let the ui load
     await dbService.db;
 
+    if (folderPath != null) {
+      await refreshNotesList();
+    }
+
     isLoading = false;
 
     //tells ui to rebuild, col
+    notifyListeners();
+  }
+
+  Future<void> refreshNotesList() async {
+    allNotes = await dbService.getAllNotes();
     notifyListeners();
   }
 
@@ -38,6 +51,7 @@ class HomePageLogic extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('folder_path', selectedDirectory);
       folderPath = selectedDirectory;
+      await refreshNotesList(); //load empty list
       //tells the ui th folder is picked
       notifyListeners();
     }
@@ -49,5 +63,38 @@ class HomePageLogic extends ChangeNotifier {
     await prefs.remove('folder_path');
     folderPath = null;
     notifyListeners();
+  }
+
+  Future<void> createAndSaveNote(String title, String content) async {
+    if (folderPath == null) {
+      return;
+    }
+
+    //create safe file name
+    String safeTitle = title
+        .replaceAll(' ', '_')
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    if (safeTitle.isEmpty) {
+      safeTitle = "Untitled";
+    }
+
+    String fullPath = "$folderPath/$safeTitle.md";
+    File file = File(fullPath);
+
+    //write raw md file into hard drive
+    await file.writeAsString(content);
+
+    //create the db index obj
+    final newNote = Note()
+      ..title = title
+      ..content = content
+      ..filePath = fullPath
+      ..updateAt = DateTime.now();
+
+    //save ot isar
+    await dbService.saveNoteIndex(newNote);
+
+    //update the ui
+    await refreshNotesList();
   }
 }

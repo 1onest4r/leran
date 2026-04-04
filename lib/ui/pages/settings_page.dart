@@ -36,7 +36,7 @@ class SettingsPage extends StatelessWidget {
           _settingsCard([
             const ListTile(
               leading: Icon(Icons.folder_open),
-              title: Text("Vault Location"),
+              title: Text("Folder Location"),
               subtitle: Text("No folder selected"),
               trailing: Icon(Icons.chevron_right),
             ),

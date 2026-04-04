@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../logic/home_page_logic.dart';
+
+import '../../logic/folder_logic.dart';
+import 'note_editor_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,7 +11,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final HomePageLogic _folderLogic = HomePageLogic();
+  final FolderLogic _folderLogic = FolderLogic();
 
   @override
   void dispose() {
@@ -24,7 +26,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text(
-          "VAULT",
+          "FOLDER",
           style: TextStyle(
             color: Color(0xFF33B996),
             fontWeight: FontWeight.bold,
@@ -63,7 +65,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 20),
           const Text(
-            "No Active Vault",
+            "No Active Folder",
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
@@ -77,7 +79,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 30),
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: _folderLogic.selectFolder,
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFF33B996), width: 2),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -97,35 +99,62 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildActiveFolder() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.check_circle_outline,
-            color: Color(0xFF33B996),
-            size: 60,
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            "Folder Connected!",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _folderLogic.folderPath!,
-            style: const TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton(
-            onPressed: _folderLogic.disconnectFolder,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text(
-              "Disconnect Folder",
-              style: TextStyle(color: Colors.white),
+    return Scaffold(
+      backgroundColor: Colors.transparent, // Keeps the dark theme
+      body: _folderLogic.allNotes.isEmpty
+          ? const Center(
+              child: Text(
+                "Folder is empty. Create a note!",
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _folderLogic.allNotes.length,
+              itemBuilder: (context, index) {
+                final note = _folderLogic.allNotes[index];
+                return Card(
+                  color: const Color(0xFF1A1A1A),
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(16),
+                    title: Text(
+                      note.title.isEmpty ? "Untitled" : note.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    subtitle: Text(
+                      note.content,
+                      maxLines: 2,
+                      overflow:
+                          TextOverflow.ellipsis, // Cuts off long text with ...
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    onTap: () {
+                      // TODO: Open the editor with this existing note's data!
+                    },
+                  ),
+                );
+              },
             ),
-          ),
-        ],
+      // THE CREATE NOTE BUTTON
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF33B996),
+        child: const Icon(Icons.edit, color: Colors.black),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NoteEditorPage(folderLogic: _folderLogic),
+            ),
+          );
+        },
       ),
     );
   }
