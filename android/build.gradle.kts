@@ -1,3 +1,5 @@
+import com.android.build.gradle.LibraryExtension
+
 allprojects {
     repositories {
         google()
@@ -21,4 +23,16 @@ subprojects {
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
+}
+subprojects {
+    val subproject = this
+    subproject.plugins.configureEach {
+        if (this.javaClass.name.contains("com.android.build.gradle.LibraryPlugin")) {
+            subproject.extensions.configure<LibraryExtension>("android") {
+                if (namespace == null) {
+                    namespace = subproject.group.toString()
+                }
+            }
+        }
+    }
 }

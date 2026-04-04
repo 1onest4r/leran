@@ -31,17 +31,20 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF33B996)),
+          icon: Icon(Icons.arrow_back, color: primaryColor),
           onPressed: _saveNote, // Save automatically when hitting back!
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.check, color: Color(0xFF33B996)),
+            icon: Icon(Icons.check, color: primaryColor),
             onPressed: _saveNote,
           ),
         ],
@@ -53,11 +56,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
             // TITLE INPUT
             TextField(
               controller: _titleController,
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+              style: theme.textTheme.headlineMedium,
               decoration: const InputDecoration(
                 hintText: "Note Title",
                 hintStyle: TextStyle(color: Colors.grey),
@@ -72,9 +71,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 controller: _contentController,
                 maxLines:
                     null, // Makes it expand infinitely like a real note app
-                style: const TextStyle(fontSize: 16, color: Colors.white70),
+                style: theme.textTheme.bodyLarge,
                 decoration: const InputDecoration(
-                  hintText: "Start typing your markdown here...",
+                  hintText: "Start typing...",
                   hintStyle: TextStyle(color: Colors.grey),
                   border: InputBorder.none,
                   filled: false,

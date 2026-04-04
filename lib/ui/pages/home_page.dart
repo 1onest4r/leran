@@ -21,14 +21,16 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
+        title: Text(
           "FOLDER",
           style: TextStyle(
-            color: Color(0xFF33B996),
+            color: primaryColor,
             fontWeight: FontWeight.bold,
             letterSpacing: 1.2,
           ),
@@ -54,6 +56,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildNoFolder() {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -61,7 +65,7 @@ class _HomePageState extends State<HomePage> {
           Icon(
             Icons.folder_off_outlined,
             size: 80,
-            color: Colors.teal.withOpacity(0.4),
+            color: primaryColor.withOpacity(0.4),
           ),
           const SizedBox(height: 20),
           const Text(
@@ -81,7 +85,7 @@ class _HomePageState extends State<HomePage> {
           OutlinedButton.icon(
             onPressed: _folderLogic.selectFolder,
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF33B996), width: 2),
+              side: BorderSide(color: primaryColor, width: 2),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -114,7 +118,7 @@ class _HomePageState extends State<HomePage> {
               itemBuilder: (context, index) {
                 final note = _folderLogic.allNotes[index];
                 return Card(
-                  color: const Color(0xFF1A1A1A),
+                  color: Theme.of(context).colorScheme.surface,
                   elevation: 0,
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(
@@ -145,7 +149,7 @@ class _HomePageState extends State<HomePage> {
             ),
       // THE CREATE NOTE BUTTON
       floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF33B996),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         child: const Icon(Icons.edit, color: Colors.black),
         onPressed: () {
           Navigator.push(

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'theme_palette.dart';
 
 class MobileLayout extends StatelessWidget {
   final int currentIndex;
@@ -15,6 +14,8 @@ class MobileLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 320, minHeight: 480),
@@ -22,30 +23,33 @@ class MobileLayout extends StatelessWidget {
       ),
       bottomNavigationBar: Container(
         height: 80,
-        color: AppTheme.neutral,
+        color: theme.scaffoldBackgroundColor,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _navIcon(Icons.description_outlined, 0),
-            _navIcon(Icons.search, 1),
-            _navIcon(Icons.folder_outlined, 2),
-            _navIcon(Icons.settings_outlined, 3),
+            _navIcon(context, Icons.description_outlined, 0),
+            _navIcon(context, Icons.search, 1),
+            _navIcon(context, Icons.folder_outlined, 2),
+            _navIcon(context, Icons.settings_outlined, 3),
           ],
         ),
       ),
     );
   }
 
-  Widget _navIcon(IconData icon, int index) {
+  Widget _navIcon(BuildContext context, IconData icon, int index) {
     bool isActive = currentIndex == index;
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return GestureDetector(
       onTap: () => onIndexChanged(index),
       child: Container(
         width: 50,
         height: 50,
         decoration: BoxDecoration(
-          color: isActive ? AppTheme.primary : Colors.transparent,
+          color: isActive ? primaryColor : Colors.transparent,
           shape: BoxShape.circle,
         ),
         child: Icon(

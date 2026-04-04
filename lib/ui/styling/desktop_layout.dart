@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'theme_palette.dart';
 
 class DesktopLayout extends StatelessWidget {
   final int currentIndex;
@@ -15,6 +14,8 @@ class DesktopLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 360, minWidth: 500),
@@ -23,19 +24,18 @@ class DesktopLayout extends StatelessWidget {
             // Sidebar
             Container(
               width: 80,
-              color: const Color(
-                0xFF1A1A1A,
-              ), // Slightly lighter than background
+              color:
+                  theme.colorScheme.surface, // Slightly lighter than background
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _navIcon(Icons.description_outlined, 0),
+                  _navIcon(context, Icons.description_outlined, 0),
                   const SizedBox(height: 20),
-                  _navIcon(Icons.search, 1),
+                  _navIcon(context, Icons.search, 1),
                   const SizedBox(height: 20),
-                  _navIcon(Icons.folder_outlined, 2),
+                  _navIcon(context, Icons.folder_outlined, 2),
                   const SizedBox(height: 20),
-                  _navIcon(Icons.settings_outlined, 3),
+                  _navIcon(context, Icons.settings_outlined, 3),
                 ],
               ),
             ),
@@ -47,15 +47,18 @@ class DesktopLayout extends StatelessWidget {
     );
   }
 
-  Widget _navIcon(IconData icon, int index) {
+  Widget _navIcon(BuildContext context, IconData icon, int index) {
     bool isActive = currentIndex == index;
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return GestureDetector(
       onTap: () => onIndexChanged(index),
       child: Container(
         width: 50,
         height: 50,
         decoration: BoxDecoration(
-          color: isActive ? AppTheme.primary : Colors.transparent,
+          color: isActive ? primaryColor : Colors.transparent,
           shape: BoxShape.circle,
         ),
         child: Icon(
