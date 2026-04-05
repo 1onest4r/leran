@@ -97,4 +97,38 @@ class FolderLogic extends ChangeNotifier {
     //update the ui
     await refreshNotesList();
   }
+
+  Future<void> updateNote(Note note, String newTitle, String newContent) async {
+    try {
+      final oldFile = File(note.filePath);
+
+      //prepare the new file path properly
+      String safeTitle = newTitle
+          .replaceAll(' ', '_')
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+      if (safeTitle.isEmpty) {
+        safeTitle = "Untitled";
+      }
+      String newPath = "$folderPath/$safeTitle.md";
+
+      if (note.filePath != newPath) {
+        if (await oldFile.exists()) {
+          await oldFile.delete();
+        }
+      }
+
+      final newFile = File(newPath);
+      await newFile.writeAsString(newContent);
+
+      note.title = newTitle;
+      note.content = newContent;
+      note.filePath = newPath;
+      note.updateAt = DateTime.now();
+
+      await dbService.saveNoteIndex(note);
+      await refreshNotesList();
+    } catch (e) {
+      print("Error updating note: $e");
+    }
+  }
 }

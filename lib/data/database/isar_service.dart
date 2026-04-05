@@ -36,7 +36,7 @@ class IsarService {
   //fetch all notes to show on the home page
   Future<List<Note>> getAllNotes() async {
     final isar = await db;
-    return await isar.notes.where().sortByUpdateAtDesc().findAll();
+    return await isar.notes.where().sortByTitle().findAll();
   }
 
   //supa mega fast search (check title or content)

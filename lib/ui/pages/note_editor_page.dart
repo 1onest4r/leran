@@ -1,30 +1,44 @@
 import 'package:flutter/material.dart';
 import '../../logic/folder_logic.dart';
+import '../../data/models/note.dart';
 
 class NoteEditorPage extends StatefulWidget {
   final FolderLogic folderLogic;
+  final Note? note;
 
-  const NoteEditorPage({super.key, required this.folderLogic});
+  const NoteEditorPage({super.key, required this.folderLogic, this.note});
 
   @override
   State<NoteEditorPage> createState() => _NoteEditorPageState();
 }
 
 class _NoteEditorPageState extends State<NoteEditorPage> {
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _contentController = TextEditingController();
+  late TextEditingController _titleController;
+  late TextEditingController _contentController;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.note?.title ?? "");
+    _contentController = TextEditingController(
+      text: widget.note?.content ?? "",
+    );
+  }
 
   void _saveNote() async {
-    if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
-      Navigator.pop(context); // dont save empty notes
+    final title = _titleController.text;
+    final content = _contentController.text;
+
+    if (title.isEmpty && content.isEmpty) {
+      Navigator.pop(context);
       return;
     }
 
-    //call the logic to save the file and index it
-    await widget.folderLogic.createAndSaveNote(
-      _titleController.text,
-      _contentController.text,
-    );
+    if (widget.note == null) {
+      await widget.folderLogic.createAndSaveNote(title, content);
+    } else {
+      await widget.folderLogic.updateNote(widget.note!, title, content);
+    }
 
     if (mounted) Navigator.pop(context); //go back to folder
   }

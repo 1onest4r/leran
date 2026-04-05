@@ -141,7 +141,15 @@ class _HomePageState extends State<HomePage> {
                       style: const TextStyle(color: Colors.grey),
                     ),
                     onTap: () {
-                      // TODO: Open the editor with this existing note's data!
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => NoteEditorPage(
+                            folderLogic: _folderLogic,
+                            note: note,
+                          ),
+                        ),
+                      );
                     },
                   ),
                 );
