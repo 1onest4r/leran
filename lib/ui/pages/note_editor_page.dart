@@ -15,6 +15,7 @@ class NoteEditorPage extends StatefulWidget {
 class _NoteEditorPageState extends State<NoteEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
+  late String _currentFilePath;
 
   @override
   void initState() {
@@ -23,6 +24,67 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     _contentController = TextEditingController(
       text: widget.note?.content ?? "",
     );
+
+    _currentFilePath = widget.note?.filePath ?? "";
+
+    widget.folderLogic.addListener(_onFolderLogicUpdated);
+  }
+
+  @override
+  void dispose() {
+    widget.folderLogic.removeListener(_onFolderLogicUpdated);
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
+  void _onFolderLogicUpdated() {
+    if (_currentFilePath.isEmpty) {
+      return;
+    }
+
+    if (widget.folderLogic.lastMovedFromPath == _currentFilePath) {
+      _currentFilePath = widget.folderLogic.lastMovedToPath!;
+
+      if (widget.note != null) {
+        widget.note!.filePath = _currentFilePath;
+      }
+    }
+
+    try {
+      //find the live version of this note in the database
+      final liveNote = widget.folderLogic.allNotes.firstWhere(
+        (n) => n.filePath == _currentFilePath,
+      );
+
+      if (liveNote.title != _titleController.text) {
+        _titleController.text = liveNote.title;
+      }
+
+      //update the content (preserving cursor position)
+      if (liveNote.content != _contentController.text) {
+        final cursorPosition = _contentController.selection;
+        _contentController.text = liveNote.content;
+
+        //safely restore the cursor
+        if (cursorPosition.baseOffset >= 0 &&
+            cursorPosition.baseOffset <= liveNote.content.length) {
+          _contentController.selection = cursorPosition;
+        } else {
+          //if the new content is shorter, place cursor at the end
+          _contentController.selection = TextSelection.collapsed(
+            offset: liveNote.content.length,
+          );
+        }
+      }
+
+      //update title
+      if (liveNote.title != _titleController.text) {
+        _titleController.text = liveNote.title;
+      }
+    } catch (e) {
+      print("Note is deleted or renamed externally");
+    }
   }
 
   void _saveNote() async {

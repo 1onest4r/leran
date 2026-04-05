@@ -71,4 +71,31 @@ class IsarService {
     final isar = await db;
     return await isar.notes.where().sortByUpdateAtDesc().limit(limit).findAll();
   }
+
+  //find an existing note by its file path to prevent duplicates
+  Future<Note?> getNoteByPath(String path) async {
+    final isar = await db;
+    final notes = await isar.notes.filter().filePathEqualTo(path).findAll();
+
+    if (notes.isEmpty) {
+      return null;
+    }
+
+    //self healing if duplication happened keep the first and delete the rest
+    if (notes.length > 1) {
+      await isar.writeTxn(() async {
+        await isar.notes.filter().filePathEqualTo(path).deleteAll();
+        await isar.notes.put(notes.first);
+      });
+    }
+
+    return notes.first;
+  }
+
+  Future<void> deleteNoteByPath(String path) async {
+    final isar = await db;
+    await isar.writeTxn(() async {
+      await isar.notes.filter().filePathEqualTo(path).deleteAll();
+    });
+  }
 }
