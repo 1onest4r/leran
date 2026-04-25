@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../data/database/isar_service.dart';
 import '../data/models/note.dart';
@@ -34,20 +35,29 @@ class FolderLogic extends ChangeNotifier {
 
   //if the user had already picked folder in the past
   Future<void> loadSavedFolder() async {
-    final prefs = await SharedPreferences.getInstance();
-    folderPath = prefs.getString('folder_path');
+    // 1. Immediately abort DB load if on the web so the UI can load
+    if (kIsWeb) {
+      isLoading = false;
+      notifyListeners();
+      return;
+    }
 
-    //ensure the db is fully open before we let the ui load
-    await dbService.db;
+    // 2. Wrap the rest in a try-catch to prevent silent freezing
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      folderPath = prefs.getString('folder_path');
 
-    if (folderPath != null) {
-      await refreshNotesList();
-      _startWatchingDirectory(folderPath!);
+      await dbService.db;
+
+      if (folderPath != null) {
+        await refreshNotesList();
+        _startWatchingDirectory(folderPath!);
+      }
+    } catch (e) {
+      print("Error loading database: $e");
     }
 
     isLoading = false;
-
-    //tells ui to rebuild, col
     notifyListeners();
   }
 

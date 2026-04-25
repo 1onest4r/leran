@@ -20,13 +20,16 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: "stable" # or 'master' if you are using master
+          channel: "stable"
 
       - name: Install Dependencies
         run: flutter pub get
 
+      # ADD THIS NEW STEP HERE!
+      - name: Fix Isar Integer Bug for Web
+        run: find lib -name "*.g.dart" -exec sed -i -E 's/-?[0-9]{16,}/123456789/g' {} +
+
       - name: Build Web
-        # IMPORTANT: Replace YOUR_REPO_NAME with your exact GitHub repository name!
         run: flutter build web --base-href "/leran/"
 
       - name: Deploy to GitHub Pages
