@@ -27,7 +27,7 @@ jobs:
 
       - name: Build Web
         # IMPORTANT: Replace YOUR_REPO_NAME with your exact GitHub repository name!
-        run: flutter build web --base-href "/leranE/"
+        run: flutter build web --base-href "/leran/"
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
