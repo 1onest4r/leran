@@ -25,7 +25,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17" // Fixed the deprecation warning here too
     }
 
     defaultConfig {
@@ -38,7 +38,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Using getProperty is safer in Kotlin DSL
             keyAlias = keystoreProperties.getProperty("keyAlias")
             keyPassword = keystoreProperties.getProperty("keyPassword")
             storePassword = keystoreProperties.getProperty("storePassword")
@@ -52,13 +51,18 @@ android {
 
     buildTypes {
         release {
-            // This links to the signingConfig defined above
             signingConfig = signingConfigs.getByName("release")
-            
-            // Optimizations for Play Store
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    // --- FIX: Modern Kotlin DSL Packaging Options ---
+    packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/arm64-v8a/libsyncthing.so")
+            keepDebugSymbols.add("**/x86_64/libsyncthing.so")
         }
     }
 }

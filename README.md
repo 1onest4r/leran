@@ -1,40 +1,68 @@
-# leran
+# Leran 
+<div align="center">
+  <img src="images/logo.png" alt="Leran Logo" width="150"/>
+</div>
 
-A new Flutter project.
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=io.github.dev1onest4r.leran&hl=en">
+    <img src="https://img.shields.io/badge/Google_Play-Available-4CAF50?style=for-the-badge&logo=google-play&logoColor=white" alt="Get it on Google Play" />
+  </a>
+</p>
 
-- [ ] find the issue that is causing the app feeling laggy
-- [ ] figure out a way to save the current state (without reloading the whole ui)
-- [ ] add keyboard keys for shortcut hold alt for showing the shortcut keys specifically for desktop version
-- [ ] add option for loading some chunks of the whole file for both home page and search
-- [ ] split the note logic from folder_logic and integrate tags as ~tag name~ so the name must be between ~~ marks
-- [ ] add option for search by title, content, tag (multiple categories can be selected but order is tag, title, content)
-- [ ] make the clusters page working with proper clustering logic
-- [ ] make the settings page working
-  - [ ] make syncing page with folder picker to give user ability to sync partial data
-  - [ ] make a cluster disabler working
-- [ ] learn about syncthing and integrate into the project
-- [ ] make feedback working in the settings page
-- [ ] make theme toggle/changer working
-- [ ] update the android release to 2.0.0+6, publish on linux and windows
+## What is Leran?
+Leran is a local-first, markdown-based note-taking application that features true peer-to-peer (P2P) syncing across devices without relying on a central cloud server. By embedding the powerful Syncthing engine directly into the app, your notes remain completely private, globally accessible, and seamlessly synchronized across your personal ecosystem.
 
-- [ ] enable [[file name]] for linking the files and figure how how to easily index it for graphing
+## Tech Stack
+* **Language:** Dart
+* **Framework:** Flutter (Android, Windows, Linux)
+* **Embedded Engine:** Syncthing (Go-based P2P synchronization binary)
+* **Major Libraries:** 
+  * `http` (REST API communication with the local daemon)
+  * `shared_preferences` (Persistent local settings & key storage)
+  * `file_picker` (System folder selection)
+  * `permission_handler` (Scoped storage access for Android 11+)
+  * `path_provider` & `path` (Cross-platform file system routing)
 
-## How Leran the app works
+## Technical Features
+* **Embedded Background Daemon:** Automatically extracts, boots, and manages a platform-specific Syncthing binary (`.so` on Android, `.exe` on Windows) invisibly in the background.
+* **Local-First Architecture:** Reads, writes, and categorizes plain `.md` files directly on the user's hard drive, ensuring complete data ownership and zero vendor lock-in.
+* **Mutual TLS (mTLS) Security:** Secures device pairings using permanent cryptographic Hash IDs. Unknown devices are rejected at the firewall level until explicitly authenticated by the user.
+* **Real-time Filesystem Watcher:** Hooks into native OS file events (create, modify, delete, move) with debounced processing to keep the application state perfectly matched with the disk.
+* **Asynchronous Mass Ingestion:** Parses large external directories by clustering file reads/writes into small, yielding background batches to maintain a smooth 60 FPS UI.
+* **Granular Data Flow Control:** Offers per-peer customized sync routing, including Two-Way Sync, Send-Only (Push), and Receive-Only (Download) modes.
 
-it uses two open-source project (Isar noSQL database and syncthing for p2p data transfer securely)
-the app simply serves as a bundle of controller for syncing raw .md data over network to
-trusted devices that are verified by "syncthing". Isar dbs's purpose is to index the .md files so that
-searching works flawlessly and further integration on using the clustered data as visual representation
-would be a cool feature.
+## Visual Examples
 
-App is simply for syncing raw .md file over the network without ever registering to the app nor to anything
-so user's whole db could live on one or maybe devices and whenever the user wants to access some notes or data, simply connecting to network would be enough (local first and then shared over network).
+<div align="center">
+  <img src="images/1.png" alt="Leran Notes Editor" width="300"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="images/2.png" alt="P2P Synchronization Panel" width="300"/>
+</div>
 
-## Why is syncthing secure?
+## How to Run Locally
 
-it uses TLS (transfer layer security) usually used with HTTP protocol to secure data being sent
-since the HTTP communication consists of just plain texts the TLS works perfectly for this app
+To get this project running on your own machine, follow these steps:
 
-## removed isar db due to maintenance issue
+**1. Prerequisites**
+* Install the [Flutter SDK](https://docs.flutter.dev/get-started/install).
+* Ensure you have the required build tools for your target platform (Android Studio for Android, Visual Studio for Windows, etc.).
 
-isar was bs so changed to sqflite
+**2. Clone the Repository**
+```bash
+git clone https://github.com/dev1onest4r/leran.git
+cd leran
+```
+
+**3. Install Dependencies**
+```bash
+flutter pub get
+```
+
+**4. Run the Application**
+Connect a device or start an emulator, then run:
+```bash
+flutter run
+```
+
+## License
+This project is licensed under the [MIT License](LICENSE). *(Note: Syncthing itself is licensed under the MPL 2.0).*
