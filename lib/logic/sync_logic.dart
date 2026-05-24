@@ -12,12 +12,11 @@ class SyncLogic extends ChangeNotifier {
   String localDeviceId = 'Not connected';
   bool isOnline = false;
   bool isFetching = false;
-  bool isManualSyncing = false; // Tracks manual force sync
+  bool isManualSyncing = false;
 
   Map<String, dynamic> pendingDevices = {};
   Map<String, dynamic> pendingFolders = {};
 
-  // NEW: Store stats and connected peers
   List<dynamic> connectedDevices = [];
   Map<String, dynamic> folderStatus = {};
   Map<String, dynamic> connections = {};
@@ -35,34 +34,8 @@ class SyncLogic extends ChangeNotifier {
     _startPolling();
   }
 
-  // --- NEW: DECLINE PENDING REQUESTS ---
-  Future<void> ignorePendingDevice(String deviceId) async {
-    try {
-      await http.delete(
-        Uri.parse('$apiUrl/cluster/pending/devices/$deviceId'),
-        headers: {'X-API-Key': apiKey},
-      );
-      fetchPendingRequests(); // Refresh the UI
-    } catch (e) {
-      print("Error ignoring device: $e");
-    }
-  }
-
-  Future<void> ignorePendingFolder(String folderId) async {
-    try {
-      await http.delete(
-        Uri.parse('$apiUrl/cluster/pending/folders/$folderId'),
-        headers: {'X-API-Key': apiKey},
-      );
-      fetchPendingRequests(); // Refresh the UI
-    } catch (e) {
-      print("Error ignoring folder: $e");
-    }
-  }
-
   void updateSessionKey(String key) {
     apiKey = key;
-    print("SyncLogic: Received Session Key: $key");
     _retryConnection();
     notifyListeners();
   }
@@ -76,7 +49,6 @@ class SyncLogic extends ChangeNotifier {
         await Future.delayed(const Duration(seconds: 2));
       }
     }
-
     if (isOnline) {
       fetchPendingRequests();
       fetchStats();
@@ -85,10 +57,10 @@ class SyncLogic extends ChangeNotifier {
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (isOnline) {
         fetchPendingRequests();
-        fetchStats(); // Update stats regularly
+        fetchStats();
       } else {
         checkStatus();
       }
@@ -97,18 +69,13 @@ class SyncLogic extends ChangeNotifier {
 
   Future<void> checkStatus() async {
     if (apiKey.isEmpty) return;
-
     isFetching = true;
     notifyListeners();
 
     try {
-      final healthRes = await http
-          .get(Uri.parse('http://127.0.0.1:8389/rest/noauth/health'))
-          .timeout(const Duration(seconds: 2));
-
       final response = await http
           .get(
-            Uri.parse('http://127.0.0.1:8389/rest/system/status'),
+            Uri.parse('$apiUrl/system/status'),
             headers: {'X-API-Key': apiKey},
           )
           .timeout(const Duration(seconds: 3));
@@ -117,7 +84,7 @@ class SyncLogic extends ChangeNotifier {
         final data = jsonDecode(response.body);
         localDeviceId = data['myID'];
         isOnline = true;
-        fetchStats(); // Trigger fetch immediately
+        fetchStats();
       } else {
         isOnline = false;
       }
@@ -129,7 +96,6 @@ class SyncLogic extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- NEW: FETCH STATS & DEVICES ---
   Future<void> fetchStats() async {
     if (!isOnline || apiKey.isEmpty) return;
     try {
@@ -167,35 +133,169 @@ class SyncLogic extends ChangeNotifier {
     }
   }
 
-  // --- NEW: MANUAL SYNC TRIGGER ---
   Future<void> triggerManualSync(FolderLogic folderLogic) async {
     isManualSyncing = true;
     notifyListeners();
-
     try {
-      // 1. Force Syncthing Daemon to scan local folder
       await http
           .post(
             Uri.parse('$apiUrl/db/scan?folder=leran-workspace'),
             headers: {'X-API-Key': apiKey},
           )
           .timeout(const Duration(seconds: 5));
-
-      // 2. Force Flutter App to re-read files (Fixes Android reinstall glitch)
       await folderLogic.forceRescan();
-
-      // 3. Update transfer UI stats
       await fetchStats();
-    } catch (e) {
-      print("Manual sync error: $e");
-    }
-
+    } catch (e) {}
     isManualSyncing = false;
     notifyListeners();
   }
 
-  // --- NEW: RENAME DEVICE ---
-  Future<void> renameDevice(String deviceId, String newName) async {
+  // --- INTERNAL HELPERS FOR SYNCTHING JSON OBJECTS ---
+  Map<String, dynamic> _createDevice(String id, {String? ipHint}) {
+    List<String> addresses = ["dynamic"];
+    // The Duct Tape: If Android Multicast fails, directly aim at the IP address
+    if (ipHint != null && ipHint.trim().isNotEmpty) {
+      addresses.insert(0, "tcp://${ipHint.trim()}:22000");
+    }
+    return {"deviceID": id, "addresses": addresses};
+  }
+
+  Map<String, dynamic> _createFolder(
+    String id,
+    String label,
+    String path,
+    String type,
+    List<String> deviceIds,
+  ) {
+    return {
+      "id": id,
+      "label": label,
+      "path": path,
+      "type": type,
+      "devices": deviceIds.map((d) => {"deviceID": d}).toList(),
+      "rescanIntervalS": 3600,
+      "fsWatcherEnabled": true,
+      "fsWatcherDelayS": 10,
+      "ignorePerms": true, // CRITICAL: Fixes Windows <-> Android Sync Crashing
+    };
+  }
+
+  Future<String?> addDeviceAndShareFolder(
+    String remoteDeviceId,
+    String? folderPath,
+    String syncType, {
+    String? ipHint,
+  }) async {
+    if (!isOnline) return "Error: Not connected to local daemon.";
+    if (folderPath == null || folderPath.isEmpty)
+      return "Error: No folder selected in Leran.";
+
+    remoteDeviceId = remoteDeviceId.trim();
+
+    try {
+      final configRes = await http.get(
+        Uri.parse('$apiUrl/config'),
+        headers: {'X-API-Key': apiKey},
+      );
+      if (configRes.statusCode != 200)
+        return "Failed to read config: ${configRes.body}";
+
+      final config = jsonDecode(configRes.body);
+      List devices = config['devices'] ?? [];
+
+      // Update or add Device
+      int deviceIdx = devices.indexWhere(
+        (d) => d['deviceID'] == remoteDeviceId,
+      );
+      if (deviceIdx == -1) {
+        devices.add(_createDevice(remoteDeviceId, ipHint: ipHint));
+      } else if (ipHint != null && ipHint.trim().isNotEmpty) {
+        List addresses = devices[deviceIdx]['addresses'] ?? ["dynamic"];
+        String targetIp = "tcp://${ipHint.trim()}:22000";
+        if (!addresses.contains(targetIp)) {
+          addresses.insert(0, targetIp);
+          devices[deviceIdx]['addresses'] = addresses;
+        }
+      }
+
+      // Update or add Folder
+      List folders = config['folders'] ?? [];
+      String folderId = "leran-workspace";
+      int folderIdx = folders.indexWhere((f) => f['id'] == folderId);
+      String safePath = folderPath.replaceAll('\\', '/');
+
+      if (folderIdx == -1) {
+        folders.add(
+          _createFolder(folderId, "Leran Notes", safePath, syncType, [
+            localDeviceId,
+            remoteDeviceId,
+          ]),
+        );
+      } else {
+        List folderDevices = folders[folderIdx]['devices'];
+        if (!folderDevices.any((d) => d['deviceID'] == remoteDeviceId)) {
+          folderDevices.add({"deviceID": remoteDeviceId});
+        }
+        folders[folderIdx]['path'] = safePath;
+        folders[folderIdx]['type'] = syncType;
+        folders[folderIdx]['ignorePerms'] = true;
+      }
+
+      config['devices'] = devices;
+      config['folders'] = folders;
+
+      final putRes = await http.put(
+        Uri.parse('$apiUrl/config'),
+        headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
+        body: jsonEncode(config),
+      );
+
+      if (putRes.statusCode != 200)
+        return "Syncthing Rejected Config: ${putRes.body}";
+
+      fetchStats();
+      return null;
+    } catch (e) {
+      return "Network Exception: $e";
+    }
+  }
+
+  // --- PENDING REQUESTS ---
+  Future<void> fetchPendingRequests() async {
+    if (!isOnline || apiKey.isEmpty) return;
+    try {
+      final devRes = await http.get(
+        Uri.parse('$apiUrl/cluster/pending/devices'),
+        headers: {'X-API-Key': apiKey},
+      );
+      if (devRes.statusCode == 200) pendingDevices = jsonDecode(devRes.body);
+
+      final folRes = await http.get(
+        Uri.parse('$apiUrl/cluster/pending/folders'),
+        headers: {'X-API-Key': apiKey},
+      );
+      if (folRes.statusCode == 200) pendingFolders = jsonDecode(folRes.body);
+      notifyListeners();
+    } catch (e) {}
+  }
+
+  Future<void> ignorePendingDevice(String deviceId) async {
+    await http.delete(
+      Uri.parse('$apiUrl/cluster/pending/devices/$deviceId'),
+      headers: {'X-API-Key': apiKey},
+    );
+    fetchPendingRequests();
+  }
+
+  Future<void> ignorePendingFolder(String folderId) async {
+    await http.delete(
+      Uri.parse('$apiUrl/cluster/pending/folders/$folderId'),
+      headers: {'X-API-Key': apiKey},
+    );
+    fetchPendingRequests();
+  }
+
+  Future<String?> acceptPendingDevice(String deviceId) async {
     try {
       final configRes = await http.get(
         Uri.parse('$apiUrl/config'),
@@ -203,24 +303,99 @@ class SyncLogic extends ChangeNotifier {
       );
       if (configRes.statusCode == 200) {
         final config = jsonDecode(configRes.body);
-        List devices = config['devices'];
-        int idx = devices.indexWhere((d) => d['deviceID'] == deviceId);
-        if (idx != -1) {
-          devices[idx]['name'] = newName;
-          await http.put(
+        List devices = config['devices'] ?? [];
+
+        if (!devices.any((d) => d['deviceID'] == deviceId)) {
+          devices.add(_createDevice(deviceId));
+          config['devices'] = devices;
+
+          final putRes = await http.put(
             Uri.parse('$apiUrl/config'),
             headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
             body: jsonEncode(config),
           );
-          fetchStats();
+
+          if (putRes.statusCode != 200)
+            return "Syncthing Rejected Device: ${putRes.body}";
         }
+
+        await ignorePendingDevice(deviceId); // Clears the request
+        fetchStats();
+        return null; // Success!
       }
+      return "Failed to read local config.";
     } catch (e) {
-      print("Rename error: $e");
+      return "Error: $e";
     }
   }
 
-  // --- NEW: DISCONNECT / REMOVE DEVICE ---
+  Future<String?> acceptPendingFolder(
+    String folderId,
+    String folderLabel,
+    String remoteDeviceId,
+    String localPath,
+  ) async {
+    try {
+      final configRes = await http.get(
+        Uri.parse('$apiUrl/config'),
+        headers: {'X-API-Key': apiKey},
+      );
+      if (configRes.statusCode != 200) return "Failed to read config.";
+
+      final config = jsonDecode(configRes.body);
+      List folders = config['folders'] ?? [];
+
+      int folderIdx = folders.indexWhere((f) => f['id'] == folderId);
+
+      if (folderIdx == -1) {
+        // Folder does not exist locally yet. Create it!
+        folders.add(
+          _createFolder(
+            folderId,
+            folderLabel,
+            localPath.replaceAll('\\', '/'),
+            "sendreceive",
+            [localDeviceId, remoteDeviceId],
+          ),
+        );
+      } else {
+        // Folder ALREADY exists! Just map the new remote device to it.
+        List folderDevices = folders[folderIdx]['devices'] ?? [];
+        if (!folderDevices.any((d) => d['deviceID'] == remoteDeviceId)) {
+          folderDevices.add({"deviceID": remoteDeviceId});
+        }
+        folders[folderIdx]['devices'] = folderDevices;
+        folders[folderIdx]['path'] = localPath.replaceAll('\\', '/');
+        folders[folderIdx]['ignorePerms'] =
+            true; // Protect Android/Windows permissions
+      }
+
+      config['folders'] = folders;
+
+      // SAFETY NET: Ensure the device is actually in our Devices list first!
+      List devices = config['devices'] ?? [];
+      if (!devices.any((d) => d['deviceID'] == remoteDeviceId)) {
+        devices.add(_createDevice(remoteDeviceId));
+        config['devices'] = devices;
+      }
+
+      final putRes = await http.put(
+        Uri.parse('$apiUrl/config'),
+        headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
+        body: jsonEncode(config),
+      );
+
+      if (putRes.statusCode != 200)
+        return "Syncthing Rejected Config: ${putRes.body}";
+
+      await ignorePendingFolder(folderId); // Clears the request from the UI
+      fetchStats();
+      return null; // Success!
+    } catch (e) {
+      return "Error accepting folder: $e";
+    }
+  }
+
   Future<void> disconnectDevice(String deviceId) async {
     try {
       final configRes = await http.get(
@@ -229,7 +404,6 @@ class SyncLogic extends ChangeNotifier {
       );
       if (configRes.statusCode == 200) {
         final config = jsonDecode(configRes.body);
-
         List devices = config['devices'];
         devices.removeWhere((d) => d['deviceID'] == deviceId);
         config['devices'] = devices;
@@ -249,100 +423,6 @@ class SyncLogic extends ChangeNotifier {
         );
         fetchStats();
       }
-    } catch (e) {
-      print("Disconnect error: $e");
-    }
-  }
-
-  Future<void> fetchPendingRequests() async {
-    if (!isOnline || apiKey.isEmpty) return;
-    try {
-      final devRes = await http.get(
-        Uri.parse('$apiUrl/cluster/pending/devices'),
-        headers: {'X-API-Key': apiKey},
-      );
-      if (devRes.statusCode == 200) pendingDevices = jsonDecode(devRes.body);
-
-      final folRes = await http.get(
-        Uri.parse('$apiUrl/cluster/pending/folders'),
-        headers: {'X-API-Key': apiKey},
-      );
-      if (folRes.statusCode == 200) pendingFolders = jsonDecode(folRes.body);
-
-      notifyListeners();
-    } catch (e) {}
-  }
-
-  Future<void> acceptPendingDevice(String deviceId) async {
-    try {
-      final configRes = await http.get(
-        Uri.parse('$apiUrl/config'),
-        headers: {'X-API-Key': apiKey},
-      );
-      if (configRes.statusCode == 200) {
-        final config = jsonDecode(configRes.body);
-        List devices = config['devices'];
-        if (!devices.any((d) => d['deviceID'] == deviceId)) {
-          devices.add({"deviceID": deviceId});
-          config['devices'] = devices;
-
-          await http.put(
-            Uri.parse('$apiUrl/config'),
-            headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
-            body: jsonEncode(config),
-          );
-
-          await http.delete(
-            Uri.parse('$apiUrl/cluster/pending/devices/$deviceId'),
-            headers: {'X-API-Key': apiKey},
-          );
-          fetchPendingRequests();
-          fetchStats(); // Update list immediately
-        }
-      }
-    } catch (e) {}
-  }
-
-  Future<void> acceptPendingFolder(
-    String folderId,
-    String folderLabel,
-    String remoteDeviceId,
-    String localPath,
-  ) async {
-    try {
-      final configRes = await http.get(
-        Uri.parse('$apiUrl/config'),
-        headers: {'X-API-Key': apiKey},
-      );
-      if (configRes.statusCode == 200) {
-        final config = jsonDecode(configRes.body);
-        List folders = config['folders'];
-
-        if (!folders.any((f) => f['id'] == folderId)) {
-          folders.add({
-            "id": folderId,
-            "label": folderLabel,
-            "path": localPath.replaceAll('\\', '/'),
-            "devices": [
-              {"deviceID": localDeviceId},
-              {"deviceID": remoteDeviceId},
-            ],
-          });
-          config['folders'] = folders;
-
-          await http.put(
-            Uri.parse('$apiUrl/config'),
-            headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
-            body: jsonEncode(config),
-          );
-
-          await http.delete(
-            Uri.parse('$apiUrl/cluster/pending/folders/$folderId'),
-            headers: {'X-API-Key': apiKey},
-          );
-          fetchPendingRequests();
-        }
-      }
     } catch (e) {}
   }
 
@@ -352,84 +432,6 @@ class SyncLogic extends ChangeNotifier {
     if (savedKey != null && apiKey.isEmpty) {
       apiKey = savedKey;
       checkStatus();
-    }
-  }
-
-  Future<void> saveApiKey(String newKey) async {
-    apiKey = newKey;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('syncthing_api_key', apiKey);
-    notifyListeners();
-    checkStatus();
-  }
-
-  Future<String?> addDeviceAndShareFolder(
-    String remoteDeviceId,
-    String? folderPath,
-    String syncType,
-  ) async {
-    if (!isOnline) return "Error: Not connected to local daemon.";
-    if (folderPath == null || folderPath.isEmpty)
-      return "Error: No folder selected in Leran.";
-
-    remoteDeviceId = remoteDeviceId.trim();
-
-    try {
-      final configRes = await http.get(
-        Uri.parse('$apiUrl/config'),
-        headers: {'X-API-Key': apiKey},
-      );
-      if (configRes.statusCode != 200)
-        return "Failed to read config: ${configRes.body}";
-
-      final config = jsonDecode(configRes.body);
-
-      List devices = config['devices'];
-      if (!devices.any((d) => d['deviceID'] == remoteDeviceId)) {
-        devices.add({"deviceID": remoteDeviceId});
-      }
-
-      List folders = config['folders'];
-      String folderId = "leran-workspace";
-      int folderIndex = folders.indexWhere((f) => f['id'] == folderId);
-      String safePath = folderPath.replaceAll('\\', '/');
-
-      if (folderIndex == -1) {
-        folders.add({
-          "id": folderId,
-          "label": "Leran Notes",
-          "path": safePath,
-          "type": syncType,
-          "devices": [
-            {"deviceID": localDeviceId},
-            {"deviceID": remoteDeviceId},
-          ],
-        });
-      } else {
-        List folderDevices = folders[folderIndex]['devices'];
-        if (!folderDevices.any((d) => d['deviceID'] == remoteDeviceId)) {
-          folderDevices.add({"deviceID": remoteDeviceId});
-        }
-        folders[folderIndex]['path'] = safePath;
-        folders[folderIndex]['type'] = syncType;
-      }
-
-      config['devices'] = devices;
-      config['folders'] = folders;
-
-      final putRes = await http.put(
-        Uri.parse('$apiUrl/config'),
-        headers: {'X-API-Key': apiKey, 'Content-Type': 'application/json'},
-        body: jsonEncode(config),
-      );
-
-      if (putRes.statusCode != 200)
-        return "Syncthing Rejected Config: ${putRes.body}";
-
-      fetchStats(); // Refresh devices list
-      return null;
-    } catch (e) {
-      return "Network Exception: $e";
     }
   }
 }

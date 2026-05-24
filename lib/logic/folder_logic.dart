@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // <--- NEW: Required for compute()
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -9,6 +10,34 @@ import '../data/database/database_service.dart';
 import '../data/models/note.dart';
 
 enum SortOption { dateDesc, alphaAsc, alphaDesc }
+
+// --- NEW: TOP LEVEL ISOLATE FUNCTION ---
+// This runs in a separate CPU thread, completely freeing up the UI!
+Future<List<Map<String, dynamic>>> parseFilesBackground(
+  List<String> paths,
+) async {
+  List<Map<String, dynamic>> results = [];
+  for (String path in paths) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) {
+        final stat = file.statSync();
+        final content = file.readAsStringSync();
+        final title = file.uri.pathSegments.last.replaceAll('.md', '');
+
+        results.add({
+          'title': title,
+          'content': content,
+          'filePath': path,
+          'updateAt': stat.modified.toIso8601String(),
+        });
+      }
+    } catch (e) {
+      // Safely ignore files that are locked by Syncthing or deleted during read
+    }
+  }
+  return results;
+}
 
 class FolderLogic extends ChangeNotifier {
   String? folderPath;
@@ -55,11 +84,9 @@ class FolderLogic extends ChangeNotifier {
     await dbService.db;
 
     if (folderPath != null) {
-      // NEW: Check permission before trying to load files on boot
       if (Platform.isAndroid) {
         if (!await Permission.manageExternalStorage.isGranted &&
             !await Permission.storage.isGranted) {
-          // If permission was revoked, wait for the user to grant it manually later
           isLoading = false;
           notifyListeners();
           return;
@@ -88,25 +115,18 @@ class FolderLogic extends ChangeNotifier {
   }
 
   Future<void> selectFolder() async {
-    // --- NEW: Request Storage Permissions First! ---
     if (Platform.isAndroid) {
-      // For Android 11+ (API 30+)
       if (await Permission.manageExternalStorage.isDenied) {
         await Permission.manageExternalStorage.request();
       }
-      // For Android 10 and below
       if (await Permission.storage.isDenied) {
         await Permission.storage.request();
       }
-
-      // Verify they actually granted it
       if (!await Permission.manageExternalStorage.isGranted &&
           !await Permission.storage.isGranted) {
-        print("Storage permission denied. Cannot read files.");
-        return; // Stop here if user denied permission
+        return;
       }
     }
-    // ----------------------------------------------
 
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
       dialogTitle: "Select your desired folder",
@@ -131,15 +151,14 @@ class FolderLogic extends ChangeNotifier {
     }
   }
 
-  // --- NEW: Force Rescan for Android Reinstalls ---
   Future<void> forceRescan() async {
     if (folderPath != null) {
-      // In case files were skipped due to permission timing, clear DB to fetch fresh.
       await dbService.clearAllNotes();
       await _syncFolderMassive(folderPath!);
     }
   }
 
+  // --- REWRITTEN: HIGH PERFORMANCE BACKGROUND SYNC ---
   Future<void> _syncFolderMassive(String path) async {
     if (isSyncingBackground) return;
 
@@ -149,38 +168,36 @@ class FolderLogic extends ChangeNotifier {
     try {
       final directory = Directory(path);
       final entities = await directory.list(recursive: true).toList();
-      final mdFiles = entities
+
+      // Get paths only, ignoring Syncthing temp files!
+      final paths = entities
           .whereType<File>()
-          .where((f) => f.path.toLowerCase().endsWith('.md'))
+          .where(
+            (f) =>
+                f.path.toLowerCase().endsWith('.md') &&
+                !f.path.contains('.syncthing'),
+          )
+          .map((f) => f.path)
           .toList();
 
-      final int batchSize = 50;
-      for (int i = 0; i < mdFiles.length; i += batchSize) {
-        final end = (i + batchSize < mdFiles.length)
+      // RUN HEAVY I/O IN A BACKGROUND ISOLATE
+      final parsedMaps = await compute(parseFilesBackground, paths);
+
+      // Convert raw maps to Note objects
+      List<Note> allParsedNotes = parsedMaps
+          .map((m) => Note.fromMap(m))
+          .toList();
+
+      // Save to SQLite in massively fast chunks
+      final int batchSize = 100;
+      for (int i = 0; i < allParsedNotes.length; i += batchSize) {
+        final end = (i + batchSize < allParsedNotes.length)
             ? i + batchSize
-            : mdFiles.length;
-        final batch = mdFiles.sublist(i, end);
-        List<Note> notesBatch = [];
-
-        for (var file in batch) {
-          final stat = await file.stat();
-          final content = await file.readAsString();
-          final title = file.uri.pathSegments.last.replaceAll('.md', '');
-
-          notesBatch.add(
-            Note()
-              ..title = title
-              ..content = content
-              ..filePath = file.path
-              ..updateAt = stat.modified,
-          );
-        }
-
-        await dbService.saveNotesBatch(notesBatch);
-        await refreshNotesList();
-
-        await Future.delayed(const Duration(milliseconds: 100));
+            : allParsedNotes.length;
+        await dbService.saveNotesBatch(allParsedNotes.sublist(i, end));
       }
+
+      await refreshNotesList();
     } catch (e) {
       print("Background mass sync error: $e");
     }
@@ -254,6 +271,10 @@ class FolderLogic extends ChangeNotifier {
   }
 
   void _handleFileSystemEvent(FileSystemEvent event) {
+    // CRITICAL FIX: IGNORE ALL SYNCTHING TEMP FILES!
+    if (event.path.contains('.syncthing') || event.path.contains('.tmp'))
+      return;
+
     if (event is FileSystemMoveEvent) {
       if (event.destination != null && event.destination!.endsWith(".md")) {
         _debounceAction(
